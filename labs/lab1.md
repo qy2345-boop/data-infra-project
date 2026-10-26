@@ -32,8 +32,8 @@ In class we named five stages every data system has. Trace them for the two tabl
 
 ## Checklist before you submit
 
-- [ ] In-class notebook: every cell ran, including your own query and three observations
-- [ ] At-home notebook: both CSVs in `data/`, both tables loaded and checked, the key relationship described, five queries each with a one-line note, three observations, two dataset cards
-- [ ] This lifecycle map filled in, plus the "most fragile" answer
-- [ ] Every notebook saved (Cmd+S), then committed and pushed
-- [ ] Repo URL pasted into CourseWorks
+- [x] In-class notebook: every cell ran, including your own query and three observations
+- [x] At-home notebook: both CSVs in `data/`, both tables loaded and checked, the key relationship described, five queries each with a one-line note, three observations, two dataset cards
+- [x] This lifecycle map filled in, plus the "most fragile" answer
+- [x] Every notebook saved (Cmd+S), then committed and pushed
+- [x] Repo URL pasted into CourseWorks
