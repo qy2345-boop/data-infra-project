@@ -40,116 +40,106 @@ max_rows = 20000                # a safety limit on how many rows to fetch
 
 
 # -----------------------------------------------------------------------------
-# 2. CHECKS: the rules that define "ready" (at least five)
-#    The data arrives in a table called raw.
-#    Each check is SQL that COUNTS PROBLEM ROWS. 0 problems = PASS.
-#    If any check fails, the run stops and nothing is published.
+# 2. CHECKS
 # -----------------------------------------------------------------------------
 [[checks]]
 name = "enough rows arrived"
-why  = "a near-empty download means something went wrong at the source"
-sql  = "SELECT CASE WHEN count(*) >= 100 THEN 0 ELSE 1 END FROM raw"
+why  = "a near-empty download means the API or filter went wrong"
+sql  = "SELECT CASE WHEN count(*) >= 1000 THEN 0 ELSE 1 END FROM raw"
 
 [[checks]]
-name = "unique_key is never missing or repeated"
-why  = "each complaint must be counted exactly once"
-sql  = "SELECT count(*) - count(DISTINCT unique_key) FROM raw"
+name = "ridership is never negative"
+why  = "a negative rider count is impossible and would distort crowd levels"
+sql  = "SELECT count(*) FROM raw WHERE ridership < 0"
 
 [[checks]]
-name = "borough is one of the five (or UNSPECIFIED)"
-why  = "a misspelled borough would split one borough's totals in two"
+name = "station and time are never missing"
+why  = "a row without a station or hour can't be placed on the map or timeline"
+sql  = "SELECT count(*) FROM raw WHERE station_complex_id IS NULL OR transit_timestamp IS NULL"
+
+[[checks]]
+name = "no duplicate rows"
+why  = "the same station-hour-fare row counted twice would double the ridership"
 sql  = """
-SELECT count(*) FROM raw
-WHERE borough NOT IN ('BRONX', 'BROOKLYN', 'MANHATTAN', 'QUEENS', 'STATEN ISLAND', 'UNSPECIFIED')
-"""
-
-[[checks]]
-name = "no complaints dated in the future"
-why  = "a future date means a data entry error"
-sql  = "SELECT count(*) FROM raw WHERE created_date > now()::TIMESTAMP + INTERVAL 1 DAY"
-
-[[checks]]
-name = "fresh: newest complaint is under 3 days old"
-why  = "if the city stops updating, we should notice, not publish stale data"
-sql  = "SELECT CASE WHEN max(created_date) >= now()::TIMESTAMP - INTERVAL 3 DAY THEN 0 ELSE 1 END FROM raw"
-
-
-# -----------------------------------------------------------------------------
-# 3. TABLES: what to build and publish to MotherDuck (at least three)
-#    Each is a SELECT on raw, or on a table listed above it.
-#    Start with one clean table, then build analysis tables from it:
-#    a trend over time, a summary of key metrics, and a ranking.
-#    Next week's AI app answers questions from these tables.
-# -----------------------------------------------------------------------------
-
-# (a) The clean table: one row per complaint
-[[tables]]
-name = "heat_complaints"
-sql  = """
-SELECT unique_key, created_date, created_date::DATE AS created_day, borough, incident_zip
+SELECT count(*) - count(DISTINCT (station_complex_id, transit_timestamp, payment_method, fare_class_category))
 FROM raw
-WHERE borough <> 'UNSPECIFIED'      -- can't be placed in a borough: dropped on purpose
 """
 
-# (b) A trend: complaints per borough per day
+[[checks]]
+name = "all rows are in Manhattan"
+why  = "the filter should only let Manhattan stations through; anything else means the filter broke"
+sql  = "SELECT count(*) FROM raw WHERE borough <> 'Manhattan'"
+
+[[checks]]
+name = "fresh: newest data is under 45 days old"
+why  = "MTA publishes in batches; if it stops updating, we should notice instead of publishing stale data"
+sql  = "SELECT CASE WHEN max(transit_timestamp) >= now()::TIMESTAMP - INTERVAL 45 DAY THEN 0 ELSE 1 END FROM raw"
+
+
+# -----------------------------------------------------------------------------
+# 3. TABLES
+# -----------------------------------------------------------------------------
+
+# (a) The clean table: one row per station x hour (fare types added together)
 [[tables]]
-name = "heat_by_borough_day"
+name = "subway_ridership"
 sql  = """
-SELECT borough, created_day, count(*) AS complaints
-FROM heat_complaints
-GROUP BY borough, created_day
+SELECT station_complex_id, station_complex, borough,
+       transit_timestamp,
+       transit_timestamp::DATE        AS ride_day,
+       hour(transit_timestamp)        AS ride_hour,
+       sum(ridership)                 AS riders
+FROM raw
+GROUP BY station_complex_id, station_complex, borough, transit_timestamp
 """
 
-# (c) Key metrics: one row per borough
+# (b) A trend: average riders by station and hour of day
 [[tables]]
-name = "heat_borough_summary"
+name = "ridership_by_station_hour"
 sql  = """
-SELECT borough,
-       count(*)                                             AS total_complaints,
-       round(count(*) / count(DISTINCT created_day), 1)     AS avg_per_day,
-       round(100.0 * count(*) / sum(count(*)) OVER (), 1)   AS pct_of_city,
-       count(DISTINCT incident_zip)                         AS zip_codes_affected
-FROM heat_complaints
-GROUP BY borough
-ORDER BY total_complaints DESC
+SELECT station_complex, ride_hour, round(avg(riders), 1) AS avg_riders
+FROM subway_ridership
+GROUP BY station_complex, ride_hour
 """
 
-# (d) A ranking: the 20 ZIP codes with the most complaints
+# (c) Key metrics: one row per station
 [[tables]]
-name = "heat_top_zips"
+name = "station_summary"
 sql  = """
-SELECT incident_zip, borough, count(*) AS complaints
-FROM heat_complaints
-WHERE incident_zip IS NOT NULL
-GROUP BY incident_zip, borough
-ORDER BY complaints DESC
+SELECT station_complex,
+       sum(riders)                                        AS total_riders,
+       round(sum(riders) / count(DISTINCT ride_day), 0)   AS avg_per_day,
+       arg_max(ride_hour, riders)                         AS busiest_hour
+FROM subway_ridership
+GROUP BY station_complex
+ORDER BY total_riders DESC
+"""
+
+# (d) A ranking: the 20 busiest stations
+[[tables]]
+name = "top_stations"
+sql  = """
+SELECT station_complex, total_riders, avg_per_day
+FROM station_summary
+ORDER BY total_riders DESC
 LIMIT 20
 """
 
 
 # -----------------------------------------------------------------------------
-# 4. REPORT (optional): questions the pipeline answers at the end of each run
-#    Each is a plain-English question and the SQL that answers it, using the
-#    tables above. The answers print in the run log. Try your findings here!
+# 4. REPORT
 # -----------------------------------------------------------------------------
 [[report]]
-question = "Which borough has the most heat complaints?"
-sql = """
-SELECT borough, total_complaints, avg_per_day, pct_of_city
-FROM heat_borough_summary
-ORDER BY total_complaints DESC
-"""
+question = "Which five Manhattan stations are busiest?"
+sql = "SELECT * FROM top_stations LIMIT 5"
 
 [[report]]
-question = "Which five ZIP codes are hardest hit?"
-sql = "SELECT incident_zip, borough, complaints FROM heat_top_zips ORDER BY complaints DESC LIMIT 5"
-
-[[report]]
-question = "How many complaints came in each day, citywide?"
+question = "What hour of the day is busiest across Manhattan?"
 sql = """
-SELECT created_day, sum(complaints)::INT AS complaints
-FROM heat_by_borough_day
-GROUP BY created_day
-ORDER BY created_day
+SELECT ride_hour, round(sum(avg_riders), 0) AS avg_riders
+FROM ridership_by_station_hour
+GROUP BY ride_hour
+ORDER BY avg_riders DESC
+LIMIT 5
 """
 
