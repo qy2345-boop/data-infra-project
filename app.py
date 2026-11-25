@@ -294,9 +294,9 @@ question = st.chat_input("Ask a question about this data") or clicked
 if question:
     with st.spinner("Writing SQL, running it, reading the rows…"):
         try:
-            st.session_state.history.insert(0, answer(question))
+            st.session_state.history.append(answer(question))
         except AIError as e:
-            st.session_state.history.insert(0, {"question": question, "status": "ai", "text": str(e)})
+            st.session_state.history.append({"question": question, "status": "ai", "text": str(e)})
 
 for item in st.session_state.history:
     st.divider()
@@ -308,7 +308,7 @@ for item in st.session_state.history:
     else:
         st.error(item["text"])
     if item.get("sql"):
-        with st.expander("How this answer was made", expanded=item is st.session_state.history[0]):
+        with st.expander("How this answer was made", expanded=item is st.session_state.history[-1]):
             st.write("**1. The SQL the AI wrote**" + (" (it fixed its first try)" if item.get("fixed") else ""))
             st.code(item["sql"], language="sql")
             if "rows" in item:
