@@ -10,16 +10,17 @@
 # =============================================================================
 
 # What people see at the top of your app
-title       = "NYC heat complaints, this week"
-description = "Ask about heat and hot water complaints made to NYC 311 in the last 7 days."
+title       = "How crowded is the Manhattan subway?"
+description = "Ask about hourly subway entries at Manhattan stations, from MTA ridership data. Built for our NYC subway sandbox game."
 
 # Three to five questions your app answers well. They show up as buttons.
 # Tip: start with the findings from docs/findings.md.
 examples = [
-  "Which borough had the most heat complaints this week?",
-  "What share of complaints came from the Bronx?",
-  "Which five ZIP codes were hardest hit?",
-  "How many complaints came in each day, citywide?",
+  "Which Manhattan subway station is the busiest?",
+  "What hour of the day is busiest across Manhattan, morning or evening?",
+  "How busy is 14 St-Union Sq compared with other Manhattan stations?",
+  "How crowded is Grand Central at 8 AM?",
+  "What are the 10 busiest stations in Manhattan?",
 ]
 
 # The AI model. Free-tier Gemini models as of November 2026 (Google changes limits often):
@@ -33,7 +34,10 @@ max_rows = 200
 
 # Optional: extra instructions for the AI, in plain English.
 # Use this to fix answers that came out wrong in your evaluation.
-# Example: "Borough names are stored in capitals, like 'BRONX'."
 extra_instructions = """
-Borough names are stored in capital letters, like 'BRONX' and 'STATEN ISLAND'.
+Station names include the lines in parentheses, like '14 St-Union Sq (4,5,6,L,N,Q,R,W)'.
+When the user names a station, match it with ILIKE and wildcards, e.g. station_complex ILIKE '%14 St-Union Sq%', never with =.
+Borough is stored as 'Manhattan' (only the first letter capitalized), and every row is in Manhattan.
+ride_hour is 0-23 in New York time: 8 AM is 8, 5 PM is 17.
+Riders are entries through the turnstile, not exits. The data covers only a short recent window, not a full year.
 """
