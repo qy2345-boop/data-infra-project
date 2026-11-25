@@ -34,7 +34,7 @@ filter = "transit_mode = 'subway' AND borough = 'Manhattan'"
 
 # Optional: only recent rows. Remove these two lines to take all dates.
 date_column = "transit_timestamp"
-days_back = 45
+days_back = 14
 
 max_rows = 20000                # a safety limit on how many rows to fetch
 
